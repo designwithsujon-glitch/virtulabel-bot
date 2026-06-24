@@ -15,45 +15,54 @@ const PRODUCT_DATA = [
   { product: "Printed Label", moq: "500 pcs", price: "1.80/pc", material: "Polyester", delivery: "7-10 days" },
 ];
 
-const SYSTEM_PROMPT = `You are the WhatsApp customer service assistant for Virtu Label, a Bangladeshi clothing label supplier based in Dhaka.
-Respond in Banglish (Bengali and English mixed) - friendly, concise, professional.
-Keep replies short: 3-5 lines max.
-Product Database: ${JSON.stringify(PRODUCT_DATA)}
+const SYSTEM_PROMPT = `You are WhatsApp assistant for Virtu Label, a Bangladeshi clothing label supplier.
+Reply in Banglish (Bengali+English mixed). Keep it short: 3-4 lines max.
+Products: ${JSON.stringify(PRODUCT_DATA)}
 Rules:
-- Answer price, MOQ, material, delivery from the database above
-- Sample: available for most products, customer must contact for details
-- Custom design: yes, available for all products
-- If info not in database say: "Aro details er jonno call korun: 01XXXXXXXXX"
-- End with a helpful follow-up question
-- Use emojis naturally`;
+- Use product data to answer price, MOQ, delivery questions
+- Custom design available for all products
+- Sample available, contact for details
+- Unknown info: "Details er jonno call korun: 01XXXXXXXXX"
+- End with a question
+- Use emojis`;
 
 const conversations = {};
 
 app.get("/webhook", (req, res) => {
+  console.log("Webhook verification request received");
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
+  console.log("Mode:", mode, "Token:", token);
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("Webhook verified!");
     res.status(200).send(challenge);
   } else {
+    console.log("Webhook verification failed");
     res.sendStatus(403);
   }
 });
 
 app.post("/webhook", async (req, res) => {
+  console.log("POST webhook received:", JSON.stringify(req.body, null, 2));
   res.sendStatus(200);
   try {
     const body = req.body;
-    if (body.object !== "whatsapp_business_account") return;
+    if (body.object !== "whatsapp_business_account") {
+      console.log("Not whatsapp_business_account:", body.object);
+      return;
+    }
     const messages = body.entry?.[0]?.changes?.[0]?.value?.messages;
+    console.log("Messages:", JSON.stringify(messages));
     if (!messages || messages.length === 0) return;
     const message = messages[0];
     const from = message.from;
     if (message.type !== "text") {
-      await sendWhatsAppMessage(from, "Sudhu text message support kori ekhon. Apnar product somporke jiggesh korun! 😊");
+      await sendWhatsAppMessage(from, "Sudhu text message support kori. Apnar product somporkhe jiggesh korun!");
       return;
     }
     const userText = message.text.body;
+    console.log(`Message from ${from}: ${userText}`);
     if (!conversations[from]) conversations[from] = [];
     conversations[from].push({ role: "user", content: userText });
     if (conversations[from].length > 10) conversations[from] = conversations[from].slice(-10);
@@ -82,26 +91,35 @@ async function getAIReply(history) {
       }),
     });
     const data = await response.json();
-    return data.content?.[0]?.text || "Dukkhito, ektu pore abar chesta korun.";
+    console.log("AI response:", JSON.stringify(data));
+    return data.content?.[0]?.text || "Dukkhito, ektu pore try korun.";
   } catch (err) {
-    return "Dukkhito, system-e somossa hocche. Pore chesta korun.";
+    console.error("AI Error:", err);
+    return "Dukkhito, somossa hocche. Pore try korun.";
   }
 }
 
 async function sendWhatsAppMessage(to, text) {
-  await fetch(`https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: to,
-      type: "text",
-      text: { body: text },
-    }),
-  });
+  try {
+    console.log(`Sending to ${to}: ${text}`);
+    const response = await fetch(`https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: to,
+        type: "text",
+        text: { body: text },
+      }),
+    });
+    const data = await response.json();
+    console.log("Send response:", JSON.stringify(data));
+  } catch (err) {
+    console.error("Send error:", err);
+  }
 }
 
 app.get("/", (req, res) => {
